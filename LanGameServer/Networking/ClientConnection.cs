@@ -1,7 +1,16 @@
+/*
+ * OnlyLanSneakGame
+ * Copyright (c) 2026 Danny Perondi. All rights reserved.
+ * Proprietary and confidential. Unauthorized use, copying, modification,
+ * distribution, sublicensing, or disclosure is prohibited without prior
+ * written permission from Danny Perondi.
+ */
+
 using System.IO;
 using System.Net.Sockets;
 using LanGameServer.Entities;
 using LanGameServer.Gameplay;
+using LanGameShared.Protocol;
 
 namespace LanGameServer.Networking;
 
@@ -12,7 +21,7 @@ public class ClientConnection
     private StreamReader? reader;
     private StreamWriter? writer;
 
-    public string Nickname { get; private set; } = "";
+    public string Nickname { get; protected set; } = "";
     public Player Player { get; set; } = new();
     public string InputState { get; set; } = "";
 
@@ -33,8 +42,23 @@ public class ClientConnection
             var joinMsg = await reader.ReadLineAsync();
             if (joinMsg?.StartsWith("JOIN|") == true)
             {
-                Nickname = joinMsg.Split('|')[1];
-                server.AddClient(this);
+                var joinParts = joinMsg.Split('|', 2);
+                var requestedNickname = joinParts.Length > 1 ? joinParts[1] : string.Empty;
+                if (
+                    !ProtocolRules.TryNormalizeNickname(
+                        requestedNickname,
+                        out var normalizedNickname,
+                        out var errorMessage
+                    )
+                )
+                {
+                    Send($"JOIN_INVALID|{errorMessage}");
+                    return;
+                }
+
+                Nickname = normalizedNickname;
+                if (!server.AddClient(this))
+                    return;
 
                 while (tcpClient.Connected)
                 {
@@ -44,7 +68,9 @@ public class ClientConnection
 
                     if (line.StartsWith("INPUT|"))
                     {
-                        server.HandleInput(this, line.Split('|')[1]);
+                        var inputParts = line.Split('|', 2);
+                        var inputState = inputParts.Length > 1 ? inputParts[1] : string.Empty;
+                        server.HandleInput(this, inputState);
                     }
                     else if (line == "RESTART")
                     {
@@ -61,7 +87,7 @@ public class ClientConnection
         }
     }
 
-    public void Send(string message)
+    public virtual void Send(string message)
     {
         try
         {

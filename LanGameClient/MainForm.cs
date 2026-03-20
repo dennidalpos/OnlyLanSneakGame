@@ -1,10 +1,19 @@
+/*
+ * OnlyLanSneakGame
+ * Copyright (c) 2026 Danny Perondi. All rights reserved.
+ * Proprietary and confidential. Unauthorized use, copying, modification,
+ * distribution, sublicensing, or disclosure is prohibited without prior
+ * written permission from Danny Perondi.
+ */
+
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Media;
 using System.Windows.Forms;
-using LanGameClient.Models;
+using LanGameShared.Models;
+using LanGameShared.Protocol;
 
 namespace LanGameClient;
 
@@ -13,19 +22,28 @@ public class MainForm : Form
     private NetworkClient? networkClient;
     private readonly System.Windows.Forms.Timer renderTimer;
     private readonly System.Windows.Forms.Timer inputTimer;
+    private readonly Pen arenaBorderPen;
+    private readonly Pen snakeHeadPen;
+    private readonly Pen snakeBodyPen;
+    private readonly SolidBrush gameOverOverlayBrush;
+    private readonly Font hudFont;
+    private readonly Font gameOverTitleFont;
+    private readonly Font gameOverRankingFont;
     private readonly HashSet<Keys> pressedKeys = new();
     private bool isFullscreen = false;
     private FormWindowState previousWindowState;
     private FormBorderStyle previousBorderStyle;
     private Rectangle previousBounds;
     private string gamePhase = "CONNECTING";
-    private string previousPhase = "CONNECTING";
     private int localPlayerId = -1;
     private readonly List<PlayerInfo> players = new();
     private readonly List<CoinInfo> coins = new();
     private readonly List<SnakeSegmentInfo> snakeSegments = new();
     private readonly List<WallInfo> walls = new();
     private readonly object lockObj = new();
+    private string? gameOverWinnerName;
+    private int gameOverWinnerId = -1;
+    private readonly List<GameOverEntryInfo> gameOverRanking = new();
 
     public MainForm()
     {
@@ -34,6 +52,13 @@ public class MainForm : Form
         DoubleBuffered = true;
         KeyPreview = true;
         StartPosition = FormStartPosition.CenterScreen;
+        arenaBorderPen = new Pen(Color.Gray, 3);
+        snakeHeadPen = new Pen(Color.DarkRed, 3);
+        snakeBodyPen = new Pen(Color.DarkGreen, 2);
+        gameOverOverlayBrush = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
+        hudFont = new Font(Font.FontFamily, 12, FontStyle.Bold);
+        gameOverTitleFont = new Font(Font.FontFamily, 48, FontStyle.Bold);
+        gameOverRankingFont = new Font(Font.FontFamily, 16);
 
         var handle = Handle;
 
@@ -49,6 +74,25 @@ public class MainForm : Form
         FormClosing += (s, e) => networkClient?.Disconnect();
 
         ShowConnectionDialog();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            renderTimer.Dispose();
+            inputTimer.Dispose();
+            arenaBorderPen.Dispose();
+            snakeHeadPen.Dispose();
+            snakeBodyPen.Dispose();
+            gameOverOverlayBrush.Dispose();
+            hudFont.Dispose();
+            gameOverTitleFont.Dispose();
+            gameOverRankingFont.Dispose();
+            networkClient?.Disconnect();
+        }
+
+        base.Dispose(disposing);
     }
 
     private void ShowConnectionDialog()
@@ -119,7 +163,19 @@ public class MainForm : Form
         {
             var nickname = txtNickname.Text;
             var ip = txtIp.Text;
-            var port = int.Parse(txtPort.Text);
+            if (!ProtocolRules.TryNormalizeNickname(nickname, out _, out var nicknameError))
+            {
+                MessageBox.Show(nicknameError, "Connection Error");
+                Close();
+                return;
+            }
+
+            if (!int.TryParse(txtPort.Text, out var port) || port <= 0 || port > 65535)
+            {
+                MessageBox.Show("Port must be a valid number between 1 and 65535.", "Connection Error");
+                Close();
+                return;
+            }
 
             networkClient = new NetworkClient(ip, port, nickname, this);
             networkClient.Connect();
@@ -233,13 +289,13 @@ public class MainForm : Form
             {
                 var head = snakeSegments[0];
                 g.FillEllipse(Brushes.OrangeRed, head.X + 20, head.Y + 30, 22, 22);
-                g.DrawEllipse(new Pen(Color.DarkRed, 3), head.X + 20, head.Y + 30, 22, 22);
+                g.DrawEllipse(snakeHeadPen, head.X + 20, head.Y + 30, 22, 22);
 
                 for (int i = 1; i < snakeSegments.Count; i++)
                 {
                     var segment = snakeSegments[i];
                     g.FillEllipse(Brushes.LimeGreen, segment.X + 20, segment.Y + 30, 20, 20);
-                    g.DrawEllipse(new Pen(Color.DarkGreen, 2), segment.X + 20, segment.Y + 30, 20, 20);
+                    g.DrawEllipse(snakeBodyPen, segment.X + 20, segment.Y + 30, 20, 20);
                 }
             }
 
@@ -292,7 +348,7 @@ public class MainForm : Form
     private void DrawArena(Graphics g)
     {
         var arenaRect = new Rectangle(20, 30, 1240, 660);
-        g.DrawRectangle(new Pen(Color.Gray, 3), arenaRect);
+        g.DrawRectangle(arenaBorderPen, arenaRect);
     }
 
     private void DrawHud(Graphics g)
@@ -306,7 +362,7 @@ public class MainForm : Form
             hudText += $"  |  Snake: {snakeSegments.Count}  Walls: {walls.Count}";
             g.DrawString(
                 hudText,
-                new Font(Font.FontFamily, 12, FontStyle.Bold),
+                hudFont,
                 Brushes.White,
                 20,
                 5
@@ -316,30 +372,34 @@ public class MainForm : Form
 
     private void DrawGameOver(Graphics g)
     {
-        var overlay = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
-        g.FillRectangle(overlay, ClientRectangle);
+        g.FillRectangle(gameOverOverlayBrush, ClientRectangle);
 
         lock (lockObj)
         {
-            var winner = players.OrderByDescending(p => p.Score).FirstOrDefault();
-            if (winner != null)
-            {
-                var winText = $"{winner.Name} Wins!";
-                var font = new Font(Font.FontFamily, 48, FontStyle.Bold);
-                DrawCenteredText(g, winText, Brushes.Yellow, ClientSize.Height / 2 - 100, font);
+            var winnerName =
+                gameOverWinnerName
+                ?? players.FirstOrDefault(player => player.Id == gameOverWinnerId)?.Name
+                ?? players.OrderByDescending(player => player.Score).FirstOrDefault()?.Name;
 
-                var ranking = string.Join(
-                    "\n",
-                    players
-                        .OrderByDescending(p => p.Score)
-                        .Select((p, i) => $"{i + 1}. {p.Name} - {p.Score} points")
-                );
+            if (!string.IsNullOrEmpty(winnerName))
+            {
+                var winText = $"{winnerName} Wins!";
+                DrawCenteredText(g, winText, Brushes.Yellow, ClientSize.Height / 2 - 100, gameOverTitleFont);
+
+                var rankingSource = gameOverRanking.Count > 0
+                    ? gameOverRanking.Select((entry, index) =>
+                        $"{index + 1}. {entry.Name} - {entry.Score} points")
+                    : players
+                        .OrderByDescending(player => player.Score)
+                        .Select((player, index) =>
+                            $"{index + 1}. {player.Name} - {player.Score} points");
+                var ranking = string.Join("\n", rankingSource);
                 DrawCenteredText(
                     g,
                     ranking,
                     Brushes.White,
                     ClientSize.Height / 2,
-                    new Font(Font.FontFamily, 16)
+                    gameOverRankingFont
                 );
 
                 DrawCenteredText(
@@ -431,8 +491,14 @@ public class MainForm : Form
                 }
             }
 
-            previousPhase = oldPhase;
             gamePhase = phase;
+            if (phase != "GAME_OVER")
+            {
+                gameOverWinnerId = -1;
+                gameOverWinnerName = null;
+                gameOverRanking.Clear();
+            }
+
             players.Clear();
             players.AddRange(newPlayers);
             coins.Clear();
@@ -441,6 +507,17 @@ public class MainForm : Form
             snakeSegments.AddRange(newSnake);
             walls.Clear();
             walls.AddRange(newWalls);
+        }
+    }
+
+    public void UpdateGameOverSummary(int winnerId, List<GameOverEntryInfo> ranking)
+    {
+        lock (lockObj)
+        {
+            gameOverWinnerId = winnerId;
+            gameOverRanking.Clear();
+            gameOverRanking.AddRange(ranking);
+            gameOverWinnerName = ranking.FirstOrDefault()?.Name;
         }
     }
 }

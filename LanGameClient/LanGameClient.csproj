@@ -12,4 +12,8 @@
     <LangVersion>12</LangVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\LanGameShared\LanGameShared.csproj" />
+  </ItemGroup>
+
 </Project>

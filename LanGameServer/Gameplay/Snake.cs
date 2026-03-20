@@ -1,22 +1,31 @@
+/*
+ * OnlyLanSneakGame
+ * Copyright (c) 2026 Danny Perondi. All rights reserved.
+ * Proprietary and confidential. Unauthorized use, copying, modification,
+ * distribution, sublicensing, or disclosure is prohibited without prior
+ * written permission from Danny Perondi.
+ */
+
 using LanGameServer.Entities;
 
 namespace LanGameServer.Gameplay;
 
 public class Snake
 {
+    public const int SegmentSize = 20;
+    public const int DefaultLength = 20;
+    public const int ChaseRadius = 400;
+
     public List<SnakeSegment> Segments { get; } = new();
     private int directionX = 1;
     private int directionY = 0;
     private readonly Random random = new();
     private int moveCounter = 0;
     private const int MoveInterval = 3;
-    private const int SegmentSize = 20;
-    private const int SnakeLength = 20;
-    private const int ChaseRadius = 400;
 
     public Snake(int startX, int startY)
     {
-        for (int i = 0; i < SnakeLength; i++)
+        for (int i = 0; i < DefaultLength; i++)
         {
             Segments.Add(new SnakeSegment { X = startX - i * SegmentSize, Y = startY });
         }
@@ -31,23 +40,25 @@ public class Snake
 
         var head = Segments[0];
 
-        Player? target = null;
-        int minDistSq = int.MaxValue;
-
-        foreach (var p in players.OrderByDescending(p => p.Score))
-        {
-            int dxp = p.X - head.X;
-            int dyp = p.Y - head.Y;
-            int distSq = dxp * dxp + dyp * dyp;
-            if (distSq < minDistSq)
+        var targetInfo = players
+            .Select(player =>
             {
-                minDistSq = distSq;
-                target = p;
-            }
-        }
+                int dx = player.X - head.X;
+                int dy = player.Y - head.Y;
+                return new
+                {
+                    Player = player,
+                    DistanceSquared = dx * dx + dy * dy,
+                };
+            })
+            .Where(candidate => candidate.DistanceSquared <= ChaseRadius * ChaseRadius)
+            .OrderByDescending(candidate => candidate.Player.Score)
+            .ThenBy(candidate => candidate.DistanceSquared)
+            .FirstOrDefault();
 
-        if (target != null && minDistSq <= ChaseRadius * ChaseRadius)
+        if (targetInfo != null)
         {
+            var target = targetInfo.Player;
             int dxp = target.X - head.X;
             int dyp = target.Y - head.Y;
             if (Math.Abs(dxp) > Math.Abs(dyp))

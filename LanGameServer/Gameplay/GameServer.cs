@@ -1,9 +1,18 @@
+/*
+ * OnlyLanSneakGame
+ * Copyright (c) 2026 Danny Perondi. All rights reserved.
+ * Proprietary and confidential. Unauthorized use, copying, modification,
+ * distribution, sublicensing, or disclosure is prohibited without prior
+ * written permission from Danny Perondi.
+ */
+
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using LanGameServer.Entities;
 using LanGameServer.Networking;
+using LanGameShared.Protocol;
 
 namespace LanGameServer.Gameplay;
 
@@ -14,6 +23,7 @@ public class GameServer
     private readonly GameState gameState = new();
     private readonly object lockObj = new();
     private bool running = true;
+    private bool gameOverMessageSent;
 
     public void Start()
     {
@@ -66,12 +76,19 @@ public class GameServer
 
             lock (lockObj)
             {
-                gameState.Update(clients);
-
-                if (frameStart - lastBroadcast >= broadcastInterval)
+                if (clients.Count > 0)
                 {
-                    BroadcastGameState();
-                    lastBroadcast = frameStart;
+                    gameState.Update(clients);
+
+                    if (frameStart - lastBroadcast >= broadcastInterval)
+                    {
+                        BroadcastGameState();
+                        lastBroadcast = frameStart;
+                    }
+                }
+                else
+                {
+                    gameOverMessageSent = false;
                 }
             }
 
@@ -82,46 +99,51 @@ public class GameServer
         }
     }
 
-    public void AddClient(ClientConnection client)
+    public bool AddClient(ClientConnection client)
     {
         lock (lockObj)
         {
             if (clients.Count >= 4)
             {
                 client.Send("JOIN_FULL");
-                return;
+                return false;
             }
 
             var colors = new[] { "Red", "Blue", "Green", "Yellow" };
             var usedColors = clients.Select(c => c.Player.Color).ToHashSet();
             var color = colors.First(c => !usedColors.Contains(c));
 
-            var spawnPositions = new[]
-            {
-                new { X = 200, Y = 200 },
-                new { X = 1040, Y = 200 },
-                new { X = 200, Y = 460 },
-                new { X = 1040, Y = 460 },
-            };
-
             var usedIds = clients.Select(c => c.Player.Id).ToHashSet();
-            var playerId = Enumerable
-                .Range(0, spawnPositions.Length)
-                .First(i => !usedIds.Contains(i));
-            var spawn = spawnPositions[playerId];
+            var playerId = Enumerable.Range(0, 4).First(i => !usedIds.Contains(i));
 
             client.Player = new Player
             {
                 Id = playerId,
                 Name = client.Nickname,
                 Color = color,
-                X = spawn.X,
-                Y = spawn.Y,
                 Score = 0,
             };
 
+            var isFirstClient = clients.Count == 0;
             clients.Add(client);
+
+            if (isFirstClient)
+            {
+                gameState.ResetRound(clients.Select(existingClient => existingClient.Player).ToList());
+                gameOverMessageSent = false;
+            }
+            else
+            {
+                gameState.PlacePlayerAtSpawn(
+                    client.Player,
+                    clients
+                        .Where(existingClient => !ReferenceEquals(existingClient, client))
+                        .Select(existingClient => existingClient.Player)
+                );
+            }
+
             client.Send($"JOIN_OK|{playerId}|{color}");
+            return true;
         }
     }
 
@@ -130,6 +152,11 @@ public class GameServer
         lock (lockObj)
         {
             clients.Remove(client);
+
+            if (clients.Count == 0)
+            {
+                gameOverMessageSent = false;
+            }
         }
     }
 
@@ -137,19 +164,25 @@ public class GameServer
     {
         lock (lockObj)
         {
-            client.InputState = input;
+            client.InputState = ProtocolRules.NormalizeInputState(input);
         }
     }
 
-    public void HandleRestart()
+    public bool HandleRestart()
     {
         lock (lockObj)
         {
-            gameState.Reset();
             foreach (var client in clients)
             {
-                client.Player.Score = 0;
+                client.InputState = string.Empty;
             }
+
+            if (!gameState.CanRestartRound)
+                return false;
+
+            gameState.ResetRound(clients.Select(client => client.Player).ToList());
+            gameOverMessageSent = false;
+            return true;
         }
     }
 
@@ -157,46 +190,47 @@ public class GameServer
     {
         var playerData = string.Join(
             ";",
-            clients.Select(c =>
-                $"P:{c.Player.Id}:{c.Player.X}:{c.Player.Y}:{c.Player.Score}:{c.Player.Name}:{c.Player.Color}"
+            clients.Select(client =>
+                $"P:{client.Player.Id}:{client.Player.X}:{client.Player.Y}:{client.Player.Score}:{client.Player.Name}:{client.Player.Color}"
             )
         );
 
         var coinData = string.Join(";", gameState.Coins.Select(coin => $"C:{coin.X}:{coin.Y}"));
-
-        var snakeData = string.Join(
-            ";",
-            gameState.Snake.Segments.Select(seg => $"S:{seg.X}:{seg.Y}")
-        );
-
+        var snakeData = string.Join(";", gameState.Snake.Segments.Select(segment => $"S:{segment.X}:{segment.Y}"));
         var wallData = string.Join(
             ";",
             gameState.Walls.Select(wall => $"W:{wall.X}:{wall.Y}:{wall.Width}:{wall.Height}")
         );
 
         var phase = gameState.Phase;
-        var message = $"STATE|{phase}|{playerData}|{coinData}|{snakeData}|{wallData}";
+        var stateMessage = $"STATE|{phase}|{playerData}|{coinData}|{snakeData}|{wallData}";
 
         foreach (var client in clients.ToList())
         {
-            client.Send(message);
+            client.Send(stateMessage);
         }
 
-        if (phase == "GAME_OVER")
+        if (phase == "GAME_OVER" && !gameOverMessageSent && clients.Count > 0)
         {
-            var winner = clients.OrderByDescending(c => c.Player.Score).First();
+            var winner = clients.OrderByDescending(client => client.Player.Score).First();
             var ranking = string.Join(
                 ";",
                 clients
-                    .OrderByDescending(c => c.Player.Score)
-                    .Select(c => $"{c.Player.Name}:{c.Player.Score}")
+                    .OrderByDescending(client => client.Player.Score)
+                    .Select(client => $"{client.Player.Name}:{client.Player.Score}")
             );
-            var gameOverMsg = $"GAME_OVER|{winner.Player.Id}|{ranking}";
+            var gameOverMessage = $"GAME_OVER|{winner.Player.Id}|{ranking}";
 
             foreach (var client in clients.ToList())
             {
-                client.Send(gameOverMsg);
+                client.Send(gameOverMessage);
             }
+
+            gameOverMessageSent = true;
+        }
+        else if (phase != "GAME_OVER")
+        {
+            gameOverMessageSent = false;
         }
     }
 }
