@@ -18,7 +18,7 @@ Gioco multiplayer locale client/server basato su .NET che combina raccolta di mo
 
 ## Requisiti
 - .NET 8 SDK
-- Il server pubblicato richiede il runtime .NET 8 sul sistema di destinazione.
+- I publish generati da `scripts/build.ps1` sono Windows x64 framework-dependent e richiedono il runtime .NET 8 sul PC di destinazione.
 - Per il client è necessario un ambiente Windows per Windows Forms.
 
 ## Esecuzione
@@ -41,7 +41,7 @@ Gioco multiplayer locale client/server basato su .NET che combina raccolta di mo
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
   ```
-- Lo script esegue `restore`, `build -c Release`, pubblica il server come output portabile .NET 8 in `publish/server` e il client come eseguibile Windows self-contained in `publish/client`.
+- Lo script esegue `restore`, `build -c Release` e genera solo due cartelle di output: `publish/server` e `publish/client`, entrambe Windows x64 framework-dependent con `exe` di avvio.
 
 ## Test
 - Eseguire i test automatici:
@@ -56,11 +56,12 @@ Gioco multiplayer locale client/server basato su .NET che combina raccolta di mo
   powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
   ```
 - Output previsti:
-  - `publish/server/LanGameServer.dll`
+  - `publish/server/LanGameServer.exe`
   - `publish/client/LanGameClient.exe`
+- Le sole cartelle da distribuire sono `publish/server` per il server e `publish/client` per ciascun client.
 - Avvio del server pubblicato:
   ```powershell
-  dotnet .\publish\server\LanGameServer.dll
+  .\publish\server\LanGameServer.exe
   ```
 
 ## Clean

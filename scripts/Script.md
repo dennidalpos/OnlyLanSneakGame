@@ -1,16 +1,19 @@
 # Script operativi
 
 ## `build.ps1`
-- Responsabilità: ripristino, build Release e publish degli eseguibili supportati.
-- Quando usarlo: per verificare il repository localmente o produrre gli output distribuibili.
+- Responsabilità: ripristino, build Release e publish framework-dependent di server e client.
+- Quando usarlo: per verificare il repository localmente o produrre le due cartelle distribuibili `publish/server` e `publish/client`.
 - Avvio:
   ```powershell
   powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
   ```
 - Output attesi:
-  - `publish/server/LanGameServer.dll`
+  - `publish/server/LanGameServer.exe`
   - `publish/client/LanGameClient.exe`
-- Note operative: lo script ora fallisce immediatamente se un comando `dotnet` termina con exit code diverso da zero.
+- Note operative:
+  - lo script ripulisce `publish/` all'inizio per evitare file stantii negli output;
+  - il publish usa `win-x64` framework-dependent con `exe` di avvio per entrambi i progetti;
+  - lo script fallisce immediatamente se un comando `dotnet` termina con exit code diverso da zero.
 
 ## `clean.ps1`
 - Responsabilità: rimuovere artefatti generati da build, publish e test.
