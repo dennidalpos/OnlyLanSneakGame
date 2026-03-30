@@ -25,10 +25,16 @@
     "LanGameServer/Gameplay/Snake.cs",
     "LanGameServer/Networking/ClientConnection.cs",
     "scripts/build.ps1",
+    "scripts/Script.md",
     "scripts/clean.ps1",
+    "tools/",
     "tests/OnlyLanSneakGame.Tests/GameplayTests.cs",
     "tests/OnlyLanSneakGame.Tests/OnlyLanSneakGame.Tests.csproj"
   ],
   "files_big": [],
-  "tasks": []
+  "tasks": [
+    "Completare o rimuovere il flusso di packaging Windows: la directory `tools/` contiene NSSM e WiX vendorizzati, ma nel repository non esistono script, progetto installer o documentazione operativa che li colleghino al build/publish corrente.",
+    "Rendere esplicito e verificabile lo shutdown del server: `GameServer.Start()` imposta solo `running = false` dopo `Console.ReadLine()`, ma non ferma `TcpListener` e non coordina l'uscita dei task avviati con `AcceptTcpClientAsync()` e `GameLoop()`.",
+    "Aggiungere test di integrazione TCP per handshake e casi negativi di rete: il codice gestisce `JOIN_FULL`, `JOIN_INVALID`, timeout e chiusure di connessione, ma i test correnti coprono solo gameplay e parsing del protocollo, non il networking reale client/server."
+  ]
 }

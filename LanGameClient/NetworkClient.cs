@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LanGameShared.Protocol;
@@ -18,6 +19,8 @@ namespace LanGameClient;
 
 public class NetworkClient
 {
+    private const int ConnectTimeoutMs = 10000;
+    private const int JoinResponseTimeoutMs = 10000;
     private readonly string serverIp;
     private readonly int serverPort;
     private readonly string nickname;
@@ -26,6 +29,7 @@ public class NetworkClient
     private StreamReader? reader;
     private StreamWriter? writer;
     private bool connected;
+    private int connectionFailureHandled;
 
     public NetworkClient(string serverIp, int serverPort, string nickname, MainForm mainForm)
     {
@@ -41,7 +45,9 @@ public class NetworkClient
         {
             tcpClient = new TcpClient();
             tcpClient.NoDelay = true;
-            await tcpClient.ConnectAsync(serverIp, serverPort);
+
+            using var connectTimeout = new CancellationTokenSource(ConnectTimeoutMs);
+            await tcpClient.ConnectAsync(serverIp, serverPort, connectTimeout.Token);
 
             var stream = tcpClient.GetStream();
             reader = new StreamReader(stream);
@@ -56,7 +62,8 @@ public class NetworkClient
 
             await writer.WriteLineAsync($"JOIN|{normalizedNickname}");
 
-            var response = await reader.ReadLineAsync();
+            using var joinTimeout = new CancellationTokenSource(JoinResponseTimeoutMs);
+            var response = await reader.ReadLineAsync(joinTimeout.Token);
             if (response?.StartsWith("JOIN_OK", StringComparison.Ordinal) == true)
             {
                 var parts = response.Split('|', 3);
@@ -70,21 +77,30 @@ public class NetworkClient
             }
             else if (response == "JOIN_FULL")
             {
-                MessageBox.Show("Server is full (4 players max)", "Connection Error");
-                mainForm.Close();
+                ShowConnectionFailure("Server is full (4 players max).");
             }
             else if (response?.StartsWith("JOIN_INVALID|", StringComparison.Ordinal) == true)
             {
                 var parts = response.Split('|', 2);
                 var reason = parts.Length == 2 ? parts[1] : "Nickname rejected by server";
-                MessageBox.Show(reason, "Connection Error");
-                mainForm.Close();
+                ShowConnectionFailure(reason);
             }
+            else if (response == null)
+            {
+                ShowConnectionFailure("Server closed the connection before completing the handshake.");
+            }
+            else
+            {
+                ShowConnectionFailure($"Unexpected server response during handshake: {response}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            ShowConnectionFailure("Connection to the server timed out.");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Connection failed: {ex.Message}", "Connection Error");
-            mainForm.Close();
+            ShowConnectionFailure($"Connection failed: {ex.Message}");
         }
     }
 
@@ -170,6 +186,48 @@ public class NetworkClient
     public void Disconnect()
     {
         connected = false;
-        tcpClient?.Close();
+
+        try
+        {
+            reader?.Dispose();
+        }
+        catch { }
+
+        try
+        {
+            writer?.Dispose();
+        }
+        catch { }
+
+        try
+        {
+            tcpClient?.Close();
+            tcpClient?.Dispose();
+        }
+        catch { }
+
+        reader = null;
+        writer = null;
+        tcpClient = null;
+    }
+
+    private void ShowConnectionFailure(string message)
+    {
+        if (mainForm.IsDisposed)
+            return;
+
+        if (mainForm.InvokeRequired)
+        {
+            mainForm.BeginInvoke(new Action(() => ShowConnectionFailure(message)));
+            return;
+        }
+
+        if (Interlocked.Exchange(ref connectionFailureHandled, 1) != 0)
+            return;
+
+        Disconnect();
+
+        MessageBox.Show(message, "Connection Error");
+        mainForm.Close();
     }
 }

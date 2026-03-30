@@ -1,18 +1,30 @@
+# Build and publish outputs
 bin/
 obj/
 publish/
-TestResults/
-.vs/
-.vscode/
-.idea/
 build/
 dist/
 out/
 tmp/
 target/
+TestResults/
+
+# IDE and local workspace state
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userprefs
+*.rsuser
+*.sln.docstates
+
+# Test and diagnostic artifacts
 *.log
 *.trx
 *.coverage
 *.coveragexml
+
+# OS metadata
 .DS_Store
 Thumbs.db
