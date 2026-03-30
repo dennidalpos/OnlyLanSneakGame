@@ -18,17 +18,70 @@ namespace LanGameServer.Gameplay;
 
 public class GameServer
 {
+    private readonly int port;
     private TcpListener? listener;
     private readonly List<ClientConnection> clients = new();
+    private readonly List<Task> clientTasks = new();
     private readonly GameState gameState = new();
     private readonly object lockObj = new();
-    private bool running = true;
+    private readonly object lifecycleLock = new();
+    private CancellationTokenSource? shutdownCts;
+    private Task? acceptClientsTask;
+    private Task? gameLoopTask;
+    private volatile bool running;
     private bool gameOverMessageSent;
+
+    public GameServer(int port = 5000)
+    {
+        this.port = port;
+    }
+
+    public bool IsRunning => running;
+
+    public int ListeningPort => (listener?.LocalEndpoint as IPEndPoint)?.Port ?? port;
 
     public void Start()
     {
-        listener = new TcpListener(IPAddress.Any, 5000);
-        listener.Start();
+        RunAsync().GetAwaiter().GetResult();
+    }
+
+    public async Task RunAsync(TextReader? commandReader = null, CancellationToken cancellationToken = default)
+    {
+        StartListening();
+
+        Console.WriteLine("Press Enter to stop server...");
+
+        commandReader ??= Console.In;
+
+        try
+        {
+            await commandReader.ReadLineAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            await StopAsync();
+        }
+    }
+
+    public void StartListening()
+    {
+        lock (lifecycleLock)
+        {
+            if (running)
+            {
+                throw new InvalidOperationException("Server is already running.");
+            }
+
+            shutdownCts = new CancellationTokenSource();
+            listener = new TcpListener(IPAddress.Any, port);
+            listener.Start();
+            running = true;
+            acceptClientsTask = AcceptClientsAsync(shutdownCts.Token);
+            gameLoopTask = GameLoopAsync(shutdownCts.Token);
+        }
 
         var localIps = Dns.GetHostEntry(Dns.GetHostName())
             .AddressList.Where(a => a.AddressFamily == AddressFamily.InterNetwork)
@@ -38,39 +91,117 @@ public class GameServer
         if (localIps.Count > 0)
             Console.WriteLine("Server IPs: " + string.Join(", ", localIps));
 
-        Console.WriteLine("Server started on port 5000");
-
-        Task.Run(AcceptClients);
-        Task.Run(GameLoop);
-
-        Console.WriteLine("Press Enter to stop server...");
-        Console.ReadLine();
-        running = false;
+        Console.WriteLine($"Server started on port {ListeningPort}");
     }
 
-    private async Task AcceptClients()
+    public async Task StopAsync()
     {
-        while (running)
+        CancellationTokenSource? cts;
+        TcpListener? listenerToStop;
+        Task? acceptTask;
+        Task? loopTask;
+        List<Task> pendingClientTasks;
+        List<ClientConnection> openClients;
+
+        lock (lifecycleLock)
+        {
+            if (!running && listener is null && acceptClientsTask is null && gameLoopTask is null)
+            {
+                return;
+            }
+
+            running = false;
+            cts = shutdownCts;
+            shutdownCts = null;
+            listenerToStop = listener;
+            listener = null;
+            acceptTask = acceptClientsTask;
+            loopTask = gameLoopTask;
+            acceptClientsTask = null;
+            gameLoopTask = null;
+            pendingClientTasks = clientTasks.ToList();
+            openClients = clients.ToList();
+        }
+
+        cts?.Cancel();
+
+        try
+        {
+            listenerToStop?.Stop();
+        }
+        catch
+        {
+        }
+
+        foreach (var client in openClients)
+        {
+            client.Close();
+        }
+
+        var tasksToAwait = new List<Task>(pendingClientTasks.Count + 2);
+        if (acceptTask is not null)
+        {
+            tasksToAwait.Add(acceptTask);
+        }
+
+        if (loopTask is not null)
+        {
+            tasksToAwait.Add(loopTask);
+        }
+
+        tasksToAwait.AddRange(pendingClientTasks);
+
+        if (tasksToAwait.Count > 0)
         {
             try
             {
-                var tcpClient = await listener!.AcceptTcpClientAsync();
+                await Task.WhenAll(tasksToAwait);
+            }
+            catch
+            {
+            }
+        }
+
+        cts?.Dispose();
+    }
+
+    private async Task AcceptClientsAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var tcpClient = await listener!.AcceptTcpClientAsync(cancellationToken);
                 tcpClient.NoDelay = true;
                 var client = new ClientConnection(tcpClient, this);
-                _ = Task.Run(() => client.HandleClient());
+                TrackClientTask(client.HandleClient());
             }
-            catch { }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (ObjectDisposedException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (SocketException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch
+            {
+            }
         }
     }
 
-    private async Task GameLoop()
+    private async Task GameLoopAsync(CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();
         const long tickInterval = 1000 / 60;
         const long broadcastInterval = 1000 / 20;
         long lastBroadcast = 0;
 
-        while (running)
+        while (!cancellationToken.IsCancellationRequested)
         {
             var frameStart = sw.ElapsedMilliseconds;
 
@@ -95,8 +226,38 @@ public class GameServer
             var elapsed = sw.ElapsedMilliseconds - frameStart;
             var sleepTime = (int)(tickInterval - elapsed);
             if (sleepTime > 0)
-                await Task.Delay(sleepTime);
+            {
+                try
+                {
+                    await Task.Delay(sleepTime, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
         }
+    }
+
+    private void TrackClientTask(Task clientTask)
+    {
+        lock (lifecycleLock)
+        {
+            clientTasks.Add(clientTask);
+        }
+
+        _ = clientTask.ContinueWith(
+            completedTask =>
+            {
+                lock (lifecycleLock)
+                {
+                    clientTasks.Remove(completedTask);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public bool AddClient(ClientConnection client)

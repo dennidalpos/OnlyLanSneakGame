@@ -95,4 +95,23 @@ public class ClientConnection
         }
         catch { }
     }
+
+    public virtual void Close()
+    {
+        try
+        {
+            tcpClient.Client.Shutdown(SocketShutdown.Both);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            tcpClient.Close();
+        }
+        catch
+        {
+        }
+    }
 }

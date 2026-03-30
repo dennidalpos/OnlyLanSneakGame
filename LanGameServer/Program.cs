@@ -12,9 +12,16 @@ namespace LanGameServer;
 
 internal class Program
 {
-    private static void Main()
+    private static async Task Main()
     {
+        using var shutdownCts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            shutdownCts.Cancel();
+        };
+
         var server = new GameServer();
-        server.Start();
+        await server.RunAsync(cancellationToken: shutdownCts.Token);
     }
 }

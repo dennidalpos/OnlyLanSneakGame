@@ -8,6 +8,7 @@
 
 using System.Net.Sockets;
 using System.Reflection;
+using System.Net;
 using LanGameServer.Entities;
 using LanGameServer.Gameplay;
 using LanGameServer.Networking;
@@ -253,6 +254,34 @@ public class GameplayTests
         Assert.Equal(2, state.Coins.Count);
         Assert.Equal(2, state.SnakeSegments.Count);
         Assert.Single(state.Walls);
+    }
+
+    [Fact]
+    public async Task StopAsync_StopsListenerAndDisconnectsClients()
+    {
+        var server = new GameServer(port: 0);
+        server.StartListening();
+
+        using var tcpClient = new TcpClient();
+        await tcpClient.ConnectAsync(IPAddress.Loopback, server.ListeningPort);
+
+        using var stream = tcpClient.GetStream();
+        using var reader = new StreamReader(stream);
+        using var writer = new StreamWriter(stream) { AutoFlush = true };
+
+        await writer.WriteLineAsync("JOIN|Alpha");
+
+        var joinResponse = await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.NotNull(joinResponse);
+        Assert.StartsWith("JOIN_OK|", joinResponse);
+
+        await server.StopAsync();
+
+        Assert.False(server.IsRunning);
+        Assert.Null(await reader.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(2)));
+
+        using var secondClient = new TcpClient();
+        await Assert.ThrowsAnyAsync<SocketException>(() => secondClient.ConnectAsync(IPAddress.Loopback, server.ListeningPort));
     }
 
     private static GameState GetServerState(GameServer server)

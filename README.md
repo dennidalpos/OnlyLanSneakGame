@@ -26,6 +26,7 @@ Gioco multiplayer locale client/server basato su .NET che combina raccolta di mo
    ```bash
    dotnet run --project LanGameServer/LanGameServer.csproj
    ```
+   Arresto server: `Invio` nella console oppure `Ctrl+C`.
 2. Avviare il client su Windows:
    ```bash
    dotnet run --project LanGameClient/LanGameClient.csproj
