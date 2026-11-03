@@ -1,92 +1,68 @@
 # OnlyLanSneakGame
 
-Gioco multiplayer locale client/server basato su .NET che combina raccolta di monete con un serpente ostile e muri dinamici. Include un server console e un client Windows Forms.
+Local multiplayer client/server game built on .NET: collect coins while avoiding a hostile snake and dynamic walls. It includes a console server and a Windows Forms client.
 
-## Setup
-- Ripristinare le dipendenze della soluzione:
-  ```powershell
-  dotnet restore .\LanGame.sln
-  ```
+## Gameplay
 
-## Struttura
-- **LanGameShared**: contratti di protocollo, parser e modelli condivisi tra client, server e test.
-- **LanGameServer**: logica di gioco, gestione connessioni e broadcasting dello stato.
-- **LanGameClient**: interfaccia grafica Windows Forms e networking del giocatore.
-- **tests/**: test automatici xUnit su gameplay e protocollo.
-- **scripts/**: script operativi di repository per build/publish e clean.
-- **docs/**: note operative e di progettazione aggiuntive.
+- Collect coins until you reach the winning score.
+- Avoid the snake, which chases the highest-scoring player within its hunting radius, and walls that change shape.
+- After a defeat, press **N** on the client to start a complete new round after `GAME_OVER`.
+- Difficulty: a faster, longer snake with a larger chase radius; a higher winning score with fewer coins; frequently regenerated, larger walls that reduce safe spaces.
 
-## Requisiti
-- .NET 8 SDK
-- I publish generati da `scripts/build.ps1` sono Windows x64 framework-dependent e richiedono il runtime .NET 8 sul PC di destinazione.
-- Per il client è necessario un ambiente Windows per Windows Forms.
+## Requirements
 
-## Esecuzione
-1. Avviare il server:
-   ```bash
-   dotnet run --project LanGameServer/LanGameServer.csproj
-   ```
-   Arresto server: `Invio` nella console oppure `Ctrl+C`.
-2. Avviare il client su Windows:
-   ```bash
-   dotnet run --project LanGameClient/LanGameClient.csproj
-   ```
-3. Inserire nickname, IP del server e porta (default 5000) e connettersi.
-4. I nickname supportano solo lettere, numeri, spazi, `-` e `_`, fino a 16 caratteri.
-5. Controlli client:
-   `WASD` o frecce per muoversi, `N` per richiedere un nuovo round dopo `GAME_OVER`, `F11` o `Alt+Enter` per fullscreen, `Esc` per uscire dal fullscreen.
+- .NET 8 SDK.
+- Windows for the client (Windows Forms).
+- Published builds are Windows x64 framework-dependent and need the .NET 8 runtime on the target PC.
 
-## Build
-- Script di build/publish:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
-  ```
-- Lo script esegue `restore`, `build -c Release` e genera solo due cartelle di output: `publish/server` e `publish/client`, entrambe Windows x64 framework-dependent con `exe` di avvio.
+## Run
 
-## Test
-- Eseguire i test automatici:
-  ```powershell
-  dotnet test .\LanGame.sln
-  ```
-- I report locali possono finire in `TestResults/`, che è esclusa dal versionamento e ripulita da `clean.ps1`.
+```powershell
+dotnet restore .\LanGame.sln
 
-## Publish
-- Per generare gli eseguibili distribuibili usare:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
-  ```
-- Output previsti:
-  - `publish/server/LanGameServer.exe`
-  - `publish/client/LanGameClient.exe`
-- Le sole cartelle da distribuire sono `publish/server` per il server e `publish/client` per ciascun client.
-- Avvio del server pubblicato:
-  ```powershell
-  .\publish\server\LanGameServer.exe
-  ```
+# Server (stop with Enter in the console or Ctrl+C)
+dotnet run --project LanGameServer/LanGameServer.csproj
 
-## Clean
-- Script di clean:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\clean.ps1
-  ```
-- `clean.ps1` rimuove gli artefatti generati in `bin/`, `obj/`, `build/`, `dist/`, `out/`, `publish/`, `target/`, `tmp/`, `TestResults/`, `.vs/` e i file di coverage o report test (`*.trx`, `*.coverage`, `*.coveragexml`).
+# Client (Windows)
+dotnet run --project LanGameClient/LanGameClient.csproj
+```
 
-## Obiettivi di gioco
-- Raccogliere monete fino a raggiungere il punteggio vittorioso.
-- Evitare il serpente che insegue il giocatore col punteggio più alto entro il suo raggio di caccia e muri che cambiano forma.
-- In caso di sconfitta, premere **N** sul client per avviare un nuovo round completo dopo il `GAME_OVER`.
+In the client enter a nickname, the server IP and the port (default 5000), then connect. Nicknames accept letters, digits, spaces, `-` and `_`, up to 16 characters.
 
-## Difficoltà
-- Serpente più rapido, più lungo e con raggio di inseguimento maggiore.
-- Punteggio di vittoria aumentato e monete presenti in numero più limitato.
-- Muri rigenerati frequentemente con dimensioni più ampie, che riducono gli spazi sicuri.
+Client controls: `WASD` or arrow keys to move, `N` for a new round after `GAME_OVER`, `F11` or `Alt+Enter` for fullscreen, `Esc` to leave fullscreen.
 
-## Copyright
-Copyright (c) 2026 Danny Perondi. All rights reserved.
+## Build and publish
 
-Questo progetto è proprietario e riservato. La consultazione del repository è consentita
-solo per visione e valutazione. Non è consentito riutilizzare, modificare, copiare,
-ridistribuire o pubblicare il codice o materiali correlati senza preventiva autorizzazione
-scritta di Danny Perondi.
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
+```
 
-Per i termini completi fare riferimento a `LICENSE`.
+The script runs `restore` and `build -c Release`, then produces two output folders: `publish/server/LanGameServer.exe` and `publish/client/LanGameClient.exe`. Distribute `publish/server` for the server and `publish/client` for each client.
+
+## Test and clean
+
+```powershell
+dotnet test .\LanGame.sln
+powershell -ExecutionPolicy Bypass -File .\scripts\clean.ps1
+```
+
+`clean.ps1` removes generated artifacts (`bin/`, `obj/`, `publish/`, `TestResults/`, `.vs/`, coverage and test report files, among others).
+
+## Project structure
+
+| Path | Content |
+| --- | --- |
+| `LanGameShared` | Protocol contracts, parser and models shared by client, server and tests |
+| `LanGameServer` | Game logic, connection handling and state broadcasting |
+| `LanGameClient` | Windows Forms UI and player networking |
+| `tests/` | xUnit tests for gameplay and protocol |
+| `scripts/` | Build/publish and clean scripts |
+| `docs/` | Additional operational and design notes |
+
+## Security
+
+The server accepts unauthenticated connections and is intended for trusted local networks only; do not expose it to the internet. See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## License
+
+Copyright (c) 2026 Danny Perondi. All rights reserved. This project is proprietary: the repository may be viewed for evaluation only, and reuse, modification, copying, redistribution or publication of the code or related materials requires prior written permission. See [LICENSE](LICENSE).
