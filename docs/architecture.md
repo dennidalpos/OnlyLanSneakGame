@@ -1,32 +1,31 @@
-# Architettura
+# Architecture and text protocol
 
-## Shared
-- **LanGameShared/Protocol/ProtocolRules.cs**: validazione nickname e normalizzazione input condivise.
-- **LanGameShared/Protocol/ProtocolMessageParser.cs**: parsing condiviso dei messaggi `STATE` e `GAME_OVER`.
-- **LanGameShared/Models/GameModels.cs**: modelli DTO condivisi tra client, server e test.
+[Retained Italian source](architecture.it.md)
 
-## Server
-- **Gameplay/GameServer.cs**: ciclo principale, gestione connessioni e broadcast dello stato.
-- **Gameplay/GameState.cs**: logica di round, spawn di muri/monete e vittoria.
-- **Gameplay/Snake.cs**: intelligenza e movimento del serpente ostile.
-- **Networking/ClientConnection.cs**: gestione connessioni TCP, handshake `JOIN` e input dei client.
-- **Entities/Entities.cs**: modelli dati condivisi fra i componenti server.
+## Components
 
-## Client
-- **MainForm.cs**: loop di rendering e input, visualizzazione dell'arena e HUD.
-- **NetworkClient.cs**: connessione TCP al server, uso del parser condiviso e invio input.
+| Component | Responsibility |
+| --- | --- |
+| LanGameShared/Protocol/ProtocolRules.cs | Nickname validation/input normalization |
+| LanGameShared/Protocol/ProtocolMessageParser.cs | STATE and GAME_OVER parsing |
+| LanGameShared/Models/GameModels.cs | Shared DTOs |
+| Server Gameplay/GameServer.cs | Main loop, connections and broadcasting |
+| Server Gameplay/GameState.cs | Rounds, wall/coin spawning and victory |
+| Server Gameplay/Snake.cs | Snake movement/chasing |
+| Server Networking/ClientConnection.cs | TCP JOIN handshake and input |
+| Client MainForm.cs | Arena/HUD rendering and local input |
+| Client NetworkClient.cs | TCP communication using shared parsing |
 
-## Protocollo
-`JOIN|nickname`
-- Nickname consentiti: lettere, numeri, spazi, `_` e `-`, massimo 16 caratteri.
-- Risposte iniziali: `JOIN_OK|id|colore`, `JOIN_FULL`, `JOIN_INVALID|motivo`.
+## Messages
 
-`STATE|fase|giocatori|monete|serpente|muri`
-- Giocatori: `P:id:x:y:score:nome:colore` separati da `;`.
-- Monete: `C:x:y`
-- Serpente: `S:x:y`
-- Muri: `W:x:y:width:height`
+JOIN|nickname uses letters/digits/spaces/underscore/hyphen, up to 16 characters. Initial replies are JOIN_OK|id|color, JOIN_FULL or JOIN_INVALID|reason.
 
-`GAME_OVER|idVincitore|nome:score;...` viene inviato una volta al termine della partita e il client lo usa per il ranking finale mostrato a schermo.
+STATE|phase|players|coins|snake|walls encodes players as P:id:x:y:score:name:color separated by semicolons, coins as C:x:y, snake points as S:x:y and walls as W:x:y:width:height.
 
-`RESTART` viene accettato solo durante `GAME_OVER` e resetta l'intero round: punteggi, posizioni giocatori, serpente, muri e monete.
+GAME_OVER|winnerId|name:score;... is sent at the end and drives the client's ranking. RESTART is accepted only during game over; it resets the full round rather than merely changing one player's score.
+
+## Boundaries
+
+This is an unauthenticated trusted-LAN protocol, not a secure internet service. Nickname field validation protects delimiters, but does not provide authentication, transport confidentiality or an overall TCP line-length/deadline limit. Source inspection of these boundaries is not a completed hostile-network test.
+
+Use repository tests for protocol/gameplay regressions; native rendering/input and actual multi-PC behavior need separate observations.

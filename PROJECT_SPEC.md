@@ -1,33 +1,23 @@
-# PROJECT_SPEC
+# Product specification
 
-## Obiettivi
+[Retained Italian source](PROJECT_SPEC.it.md)
 
-- Fornire un gioco multiplayer LAN client/server basato su .NET.
-- Consentire fino a 4 giocatori contemporanei in un'arena condivisa.
-- Far competere i giocatori nella raccolta di monete evitando serpente e muri dinamici.
+OnlyLanSneakGame is a .NET LAN game for up to four players collecting coins while avoiding a hostile snake and changing walls.
 
-## Architettura
+## Architecture
 
-- `LanGameShared/`: libreria cross-platform con contratti di protocollo, parser dei messaggi e modelli condivisi.
-- `LanGameServer/`: server console con loop di gioco, gestione connessioni TCP e serializzazione dello stato.
-- `LanGameClient/`: client Windows Forms con rendering arena, input locale e networking TCP.
-- `docs/architecture.md`: panoramica sintetica dei componenti e del protocollo testuale tra client e server.
+LanGameShared defines protocol rules/parsers and DTOs. LanGameServer owns the game loop, TCP connections and state broadcasting. LanGameClient is Windows Forms rendering/input/networking. See [architecture](docs/architecture.md).
 
-## Comportamento Atteso
+## Behavior
 
-- Il server ascolta di default sulla porta TCP `5000`.
-- Il client invia `JOIN|nickname`, riceve assegnazione giocatore e aggiorna lo stato tramite messaggi `STATE|...`.
-- I nickname ammessi contengono solo lettere, numeri, spazi, `-` e `_`, con lunghezza massima 16 caratteri.
-- La partita termina quando un giocatore raggiunge il punteggio vittorioso configurato dal server.
-- Dopo il game over un client puo' richiedere un nuovo round completo tramite `RESTART`; il round resetta punteggi, posizioni, muri, monete e serpente.
-- Se la lobby torna vuota, il primo giocatore della sessione successiva deve entrare in un round fresco senza ereditarne stato residuo.
-- Monete e muri dinamici non devono sovrapporsi a giocatori, serpente o pickup gia' presenti.
+The server defaults to TCP port 5000. Clients join with a nickname, receive an assigned player and consume state messages. Allowed nicknames contain letters, digits, spaces, hyphen and underscore, up to 16 characters.
 
-## Vincoli
+A configured winning score ends the round. RESTART is accepted only after game over and resets scores, positions, walls, coins and snake. When the lobby becomes empty, the next session starts a fresh round. Spawn rules must avoid overlap with occupied entities.
 
-- Target principale: .NET 8.
-- Il server resta portabile come applicazione `net8.0` framework-dependent, eseguibile con runtime .NET 8 installato.
-- Il client richiede Windows e Windows Forms (`net8.0-windows`).
-- Il protocollo di gioco e' testuale e delimitato da caratteri speciali.
-- Il protocollo dipende da separatori testuali, quindi i campi utente devono essere validati prima della serializzazione.
-- Gli artefatti locali generati da build e test devono essere rimovibili tramite `scripts/clean.ps1`, che pulisce `bin/`, `obj/`, `build/`, `dist/`, `out/`, `publish/`, `target/`, `tmp/`, `TestResults/` e `.vs/`.
+## Constraints and operations
+
+Shared/server target .NET 8; client/tests also require Windows-target support. global.json pins SDK 8.0.100 with latestMinor roll-forward, so an SDK 10-only host does not satisfy the canonical build prerequisite. Published Windows x64 outputs are framework-dependent.
+
+The text protocol has delimiters; validate user fields before serialization. Connections are unauthenticated and unencrypted; use only a trusted isolated LAN. Source does not impose a general read-line size/deadline at the TCP reader, so this is not an internet-facing service.
+
+Build/publish and clean scripts remove generated outputs. They require review of actual paths and separate authorization before deleting retained artifacts. Documentation verification uses isolated runtime copies and keeps all outputs; passing tests does not qualify a real multi-PC round.

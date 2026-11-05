@@ -1,39 +1,25 @@
-# Script operativi
+# Operational scripts
 
-## `build.ps1`
-- Responsabilità: ripristino, build Release e publish framework-dependent di server e client.
-- Quando usarlo: per verificare il repository localmente o produrre le due cartelle distribuibili `publish/server` e `publish/client`.
-- Avvio:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\build.ps1
-  ```
-- Output attesi:
-  - `publish/server/LanGameServer.exe`
-  - `publish/client/LanGameClient.exe`
-- Note operative:
-  - lo script ripulisce `publish/` all'inizio per evitare file stantii negli output;
-  - il publish usa `win-x64` framework-dependent con `exe` di avvio per entrambi i progetti;
-  - lo script fallisce immediatamente se un comando `dotnet` termina con exit code diverso da zero.
+[Retained Italian source](Script.it.md)
 
-## `clean.ps1`
-- Responsabilità: rimuovere artefatti generati da build, publish e test.
-- Quando usarlo: prima di una verifica pulita o per ripristinare il repository a uno stato senza output locali.
-- Avvio:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\clean.ps1
-  ```
-- Percorsi rimossi quando presenti:
-  - `bin/`
-  - `obj/`
-  - `build/`
-  - `dist/`
-  - `out/`
-  - `publish/`
-  - `target/`
-  - `tmp/`
-  - `TestResults/`
-  - `.vs/`
-- File rimossi quando presenti:
-  - `*.trx`
-  - `*.coverage`
-  - `*.coveragexml`
+## build.ps1
+
+The script restores, builds Release and publishes server/client as win-x64 framework-dependent applications. Expected destinations are publish/server/LanGameServer.exe and publish/client/LanGameClient.exe.
+
+It clears publish at startup to avoid stale outputs and fails on nonzero dotnet exit. Review/authorize that removal before using it on an existing checkout; the command is not a non-destructive verification. Distribute each entire output folder, with the required .NET runtime on the target.
+
+## clean.ps1
+
+The cleanup implementation removes generated directories including bin, obj, build, dist, out, publish, target, tmp, TestResults and .vs, plus test report/coverage files. A folder name alone does not prove its contents are disposable. Do not run this script merely to obtain a clean status or discard evidence.
+
+## Safe verification
+
+Use a fresh initialized central-runtime fixture and the repository's pinned SDK:
+
+~~~powershell
+dotnet test .\LanGame.sln -c Release
+~~~
+
+Keep logs and outputs after success/failure. An SDK prerequisite failure is an environment result, not a game-test failure. Do not relax global.json or change code to make a documentation check pass.
+
+After a separately authorized publish, inspect output hashes and runtime requirements. Local build/test results do not prove installation, firewall access or multi-machine gameplay.

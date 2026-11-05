@@ -11,7 +11,7 @@ Local multiplayer client/server game built on .NET: collect coins while avoiding
 
 ## Requirements
 
-- .NET 8 SDK.
+- .NET 8 SDK satisfying `global.json` (`8.0.100`, `latestMinor` roll-forward). A newer major SDK alone does not satisfy this pin.
 - Windows for the client (Windows Forms).
 - Published builds are Windows x64 framework-dependent and need the .NET 8 runtime on the target PC.
 
@@ -43,10 +43,9 @@ The script runs `restore` and `build -c Release`, then produces two output folde
 
 ```powershell
 dotnet test .\LanGame.sln
-powershell -ExecutionPolicy Bypass -File .\scripts\clean.ps1
 ```
 
-`clean.ps1` removes generated artifacts (`bin/`, `obj/`, `publish/`, `TestResults/`, `.vs/`, coverage and test report files, among others).
+`clean.ps1` removes generated artifacts including build/publish/test reports and caches. `build.ps1` also clears `publish/` first. Review and separately authorize exact removal paths before using either helper on retained work. For checks, use a fresh runtime fixture and keep all outputs. See [script behavior](scripts/Script.md) and [protocol architecture](docs/architecture.md).
 
 ## Project structure
 
